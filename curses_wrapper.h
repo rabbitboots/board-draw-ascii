@@ -10,17 +10,11 @@
 #include "error_handler.h"
 
 // Global array used to reference console colors with PDCurses.
-// TODO probably shouldn't be global
 int col_map[N_COLORS][N_COLORS];
 
 // -- Curses-specific initialization.
 
 int curses_init_color_pairs(void);
 int init_curses(void);
-
-// Debug functions
-void colorTestPattern(void);
-void charTest(void);
-
 
 #endif // CURSES_WRAPPER_H
