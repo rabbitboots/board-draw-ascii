@@ -152,6 +152,10 @@ int main( int argc, char * argv[] ) {
 	int cstep_x = 1;
 	int cstep_y = 1;
 	int cstep_count = 0;
+	int c_fg = COLOR_WHITE;
+	int c_bg = 0;
+	int c_bright = 1;
+	int c_blink = 0;
 	Coord offset = {1, 1} ;
 
 	while( keep_go ) {
@@ -167,6 +171,25 @@ int main( int argc, char * argv[] ) {
 		if( input == '\t' ) {
 			doodle_mode = !doodle_mode;
 		}
+		if( input == 'c' ) {
+			c_fg++;
+			if( c_fg > N_COLORS - 1 ) {
+				c_fg = 0;
+			}
+		}
+		if( input == 'v' ) {
+			c_bg++;
+			if( c_bg > N_COLORS - 1 ) {
+				c_bg = 0;
+			}
+		}
+		if( input == 'd' ) {
+			c_bright = !c_bright;
+		}
+		if( input == 'f' ) {
+			c_blink = !c_blink;
+		}
+
 		if( input == '-' ) {
 			if( cstep_x > 1 ) {
 				cstep_x--;
@@ -241,8 +264,14 @@ int main( int argc, char * argv[] ) {
 			curs_set( 2 );
 			mvprintw( 22, 0,"Doodle Mode Engaged", doodle_mode );
 		}
-		mvprintw( 23, 0, "X %d Y %d W %d H %d XStep %d YStep %d", cursor.x, cursor.y, my_board->w, my_board->h, cstep_x, cstep_y );
-		colorSet( COLOR_WHITE, COLOR_BLACK, 1, 0 );
+		mvprintw( 23, 0, "X %d Y %d W %d H %d XStep %d YStep %d c_fg %d c_bg %d c_bright %d c_blink %d", 
+		cursor.x, cursor.y, my_board->w, my_board->h, cstep_x, cstep_y, c_fg, c_bg, c_bright, c_blink );
+
+		//testing color configuration vars
+		//colorSet( COLOR_WHITE, COLOR_BLACK, 1, 0 );
+		curs_set( 0 );
+		colorSet( c_fg, c_bg, c_bright, c_blink );
+		mvaddch( cursor.y + offset.y, cursor.x + offset.x, '+' );
 		move( cursor.y + offset.y, cursor.x + offset.x );
 		refresh();
 		first_tick = false;
