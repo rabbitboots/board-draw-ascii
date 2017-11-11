@@ -9,37 +9,46 @@
 #include "curses_wrapper.h"
 #include "draw.h"
 
-typedef struct Board_t {
-	int w;
-	int h;
-	int * data;
-	bool color_enabled;
-} Board;
-
 typedef struct Coord_t {
 	int x;
 	int y;
 } Coord;
 
+typedef struct Cell_t {
+	int pattern;
+	int fg;
+	int bg;
+	int bright;
+	int blink;
+} Cell;
+
+typedef struct Board_t {
+	int w;
+	int h;
+	Cell * cells;
+	bool color_enabled;
+} Board;
+
 bool outOfBounds( int x, int y, int w, int h ) {
-	if( x < 0 || x > w - 1 || y < 0 || y > h - 1 ) {
-		return true;
-	}
-	return false;
+	return ( x < 0 || x > w - 1 || y < 0 || y > h - 1 );
 }
 
-int boardGet( Board * board, int x, int y ) {
+#define CELL_OUT_OF_BOUNDS 0
+
+Cell boardGetCell( Board * board, int x, int y ) {
 	if( outOfBounds( x, y, board->w, board->h ) ) {
-		return 0;
+		Cell oob;
+		oob.pattern = CELL_OUT_OF_BOUNDS;
+		return oob;
 	}
 	else {
-		return board->data[ (x * board->h) + y ];
+		return board->cells[ x*board->h + y ];
 	}
 }
 
-void boardPut( Board * board, int new_cell, int x, int y ) {
+void boardPutCell( Board * board, Cell new_cell, int x, int y ) {
 	if( !outOfBounds( x, y, board->w, board->h ) ) {
-		board->data[ (x * board->h) + y ] = new_cell;
+		board->cells[ x*board->h + y ] = new_cell;
 	}
 }
 
@@ -47,7 +56,14 @@ void boardWipe( Board * board, int wipe_pattern, int fg, int bg, int bright, int
 	int x, y;
 	for( x = 0; x < board->w; x++ ) {
 		for( y = 0; y < board->h; y++ ) {
-			boardPut( board, wipe_pattern, x, y );
+			Cell empty;
+			empty.pattern = wipe_pattern;
+			empty.fg = fg;
+			empty.bg = bg;
+			empty.bright = bright;
+			empty.blink = blink;
+
+			boardPutCell( board, empty, x, y );
 		}
 	}
 }
@@ -69,12 +85,13 @@ Board * boardInit( int w, int h, bool color ) {
 	new_board->h = h;
 	new_board->color_enabled = color;
 
-	new_board->data = malloc( (new_board->w * new_board->h) * sizeof(int) );
-	if( !new_board->data ) {
-		// errLog malloc() failed on data
+	new_board->cells = malloc( (new_board->w * new_board->h) * sizeof(Cell) );
+	if( !new_board->cells ) {
+		// errLog malloc() failed on cells
 		exit(1);
 		return NULL;
 	}
+
 	
 	boardWipe( new_board, ' ', COLOR_WHITE, COLOR_BLACK, 1, 0 );
 
@@ -83,18 +100,19 @@ Board * boardInit( int w, int h, bool color ) {
 
 void boardFree( Board * board ) {
 	if( board ) {
-		free( board->data );
+		free( board->cells );
 		free( board );
 	}
 }
 
 void boardDraw( Board * board, Coord offset, bool draw_border ) {
 	int x, y;
-	int packed_cell = 'X';
+	Cell current;
 	for( x = 0; x < board->w; x++ ) {
 		for( y = 0; y < board->h; y++ ) {
-			colorSet( COLOR_WHITE, COLOR_BLACK, 1, 0 );
-			mvaddch( y + offset.y, x + offset.x, boardGet( board, x, y ) );
+			current = boardGetCell( board, x, y );
+			colorSet( current.fg, current.bg, current.bright, current.blink );
+			mvaddch( y + offset.y, x + offset.x, current.pattern );
 		}
 	}
 	if( draw_border ) {
@@ -119,6 +137,35 @@ void boardDraw( Board * board, Coord offset, bool draw_border ) {
 	}
 }
 
+bool sameCells( Cell a, Cell b ) {
+	bool retval = false;
+
+	if( a.pattern == b.pattern
+		&& a.fg == b.fg
+		&& a.bg == b.bg
+		&& a.bright == b.bright
+		&& a.blink == b.blink ) {
+			retval = true;
+	}
+
+	return retval;
+}
+
+void floodFill( Board * board, Cell first, Cell second, int x, int y ) {
+	if( !outOfBounds( x, y, board->w, board->h ) ) {
+	
+		Cell check = boardGetCell( board, x, y );
+
+		if( sameCells( check, first ) && !sameCells( first, second ) ) {
+			boardPutCell( board, second, x, y );
+
+			floodFill( board, first, second, x - 1, y );
+			floodFill( board, first, second, x + 1, y );
+			floodFill( board, first, second, x, y - 1 );
+			floodFill( board, first, second, x, y + 1 );
+		}
+	}
+}
 
 int main( int argc, char * argv[] ) {
 
@@ -152,42 +199,59 @@ int main( int argc, char * argv[] ) {
 	int cstep_x = 1;
 	int cstep_y = 1;
 	int cstep_count = 0;
-	int c_fg = COLOR_WHITE;
-	int c_bg = 0;
-	int c_bright = 1;
-	int c_blink = 0;
+	Cell primary;
+	primary.pattern = '#';
+	primary.fg = COLOR_WHITE;
+	primary.bg = COLOR_BLACK;
+	primary.bright = true;
+	primary.blink = false;
+
 	Coord offset = {1, 1} ;
 
 	while( keep_go ) {
 		if( !first_tick ) {
 			input = getch();
 		}
-		if( input == 'q') {
+		
+		if( input == 'q') {	// quit
 			keep_go = false;
 		}
-		if( input == 'r') {
-			boardPut( my_board, 32 + (rand() % 128), rand() % my_board->w, rand() % my_board->h );
+		
+		if( input == 'r') { // reset board
+			boardWipe( my_board, ' ', COLOR_WHITE, COLOR_BLACK, true, false );
 		}
-		if( input == '\t' ) {
+		
+		if( input == '\t' ) {	// Toggle doodle mode
 			doodle_mode = !doodle_mode;
 		}
-		if( input == 'c' ) {
-			c_fg++;
-			if( c_fg > N_COLORS - 1 ) {
-				c_fg = 0;
+		
+		if( input == 'f' ) {	// Floodfill
+			Cell target = boardGetCell( my_board, cursor.x, cursor.y );
+			floodFill( my_board, target, primary, cursor.x, cursor.y );
+		}
+		
+		if( input == '\n' ) {
+			primary = boardGetCell( my_board, cursor.x, cursor.y );
+			mvprintw(24, 24, "Enter!");
+		}
+
+		if( input == 'c' ) {	// Cycle foreground color
+			primary.fg++;
+			if( primary.fg > N_COLORS - 1 ) {
+				primary.fg = 0;
 			}
 		}
-		if( input == 'v' ) {
-			c_bg++;
-			if( c_bg > N_COLORS - 1 ) {
-				c_bg = 0;
+		if( input == 'v' ) {	// Cycle background color
+			primary.bg++;
+			if( primary.bg > N_COLORS - 1 ) {
+				primary.bg = 0;
 			}
 		}
-		if( input == 'd' ) {
-			c_bright = !c_bright;
+		if( input == 'D' ) {
+			primary.bright = !primary.bright;
 		}
-		if( input == 'f' ) {
-			c_blink = !c_blink;
+		if( input == 'F' ) {
+			primary.blink = !primary.blink;
 		}
 
 		if( input == '-' ) {
@@ -213,10 +277,31 @@ int main( int argc, char * argv[] ) {
 		}
 
 		if( input == ' ' ) {
-			boardPut( my_board, '#', cursor.x, cursor.y );
+			boardPutCell( my_board, primary, cursor.x, cursor.y );
+			//boardPut( my_board, c_pattern, cursor.x, cursor.y );
 		}
 		if( input == KEY_DC ) {
-			boardPut( my_board, ' ', cursor.x, cursor.y );
+			Cell empty;
+			empty.pattern = ' ';
+			empty.fg = COLOR_WHITE;
+			empty.bg = COLOR_BLACK;
+			empty.bright = true;
+			empty.blink = false;
+			//boardPut( my_board, ' ', cursor.x, cursor.y );
+			boardPutCell( my_board, empty, cursor.x, cursor.y );
+		}
+
+		if( input == '[' ) {
+			primary.pattern--;
+			if( primary.pattern < 32 ) {
+				primary.pattern = 126;
+			}
+		}
+		if( input == ']' ) {
+			primary.pattern++;
+			if( primary.pattern > 126 ) {
+				primary.pattern = 32;
+			}
 		}
 
 		if( input == KEY_LEFT ) {
@@ -249,13 +334,12 @@ int main( int argc, char * argv[] ) {
 		}
 		
 		if( doodle_mode ) {
-			boardPut( my_board, '#', cursor.x, cursor.y );
+			boardPutCell( my_board, primary, cursor.x, cursor.y );
 		}
 
 		clear();
 		boardDraw( my_board, offset, true );
 
-		//mvaddch( cursor.y, cursor.x, 'X' );
 		if( !doodle_mode ) {
 			curs_set( 1 ); // Hmm, this doesn't seem to show a different cursor under my current gnome-terminal.
 			mvprintw( 22, 0, "                   " );
@@ -264,14 +348,10 @@ int main( int argc, char * argv[] ) {
 			curs_set( 2 );
 			mvprintw( 22, 0,"Doodle Mode Engaged", doodle_mode );
 		}
-		mvprintw( 23, 0, "X %d Y %d W %d H %d XStep %d YStep %d c_fg %d c_bg %d c_bright %d c_blink %d", 
-		cursor.x, cursor.y, my_board->w, my_board->h, cstep_x, cstep_y, c_fg, c_bg, c_bright, c_blink );
+		mvprintw( 23, 0, "X %d Y %d W %d H %d XStep %d YStep %d fg %d bg %d bright %d blink %d\npattern %d / %c", 
+		cursor.x, cursor.y, my_board->w, my_board->h, cstep_x, cstep_y, primary.fg, primary.bg, primary.bright, primary.blink, primary.pattern, primary.pattern );
 
-		//testing color configuration vars
-		//colorSet( COLOR_WHITE, COLOR_BLACK, 1, 0 );
-		curs_set( 0 );
-		colorSet( c_fg, c_bg, c_bright, c_blink );
-		mvaddch( cursor.y + offset.y, cursor.x + offset.x, '+' );
+		curs_set( 1 );
 		move( cursor.y + offset.y, cursor.x + offset.x );
 		refresh();
 		first_tick = false;
