@@ -9,6 +9,11 @@
 #include "curses_wrapper.h"
 #include "draw.h"
 
+/*typedef struct Stringl_t {
+	char * s;
+	size_t len;
+} Stringl;*/
+
 typedef struct Coord_t {
 	int x;
 	int y;
@@ -27,6 +32,8 @@ typedef struct Board_t {
 	int h;
 	Cell * cells;
 	bool color_enabled;
+
+	char * filename;
 } Board;
 
 bool outOfBounds( int x, int y, int w, int h ) {
@@ -68,6 +75,8 @@ void boardWipe( Board * board, int wipe_pattern, int fg, int bg, int bright, int
 	}
 }
 
+#define TEST_FILE "test_file.sav"
+
 Board * boardInit( int w, int h, bool color ) {
 	if( w < 1 || h < 1 ) {
 		// errLog boardInit(): invalid dimensions.
@@ -85,6 +94,13 @@ Board * boardInit( int w, int h, bool color ) {
 	new_board->h = h;
 	new_board->color_enabled = color;
 
+	new_board->filename = malloc( sizeof(TEST_FILE) );
+	if( !new_board->filename ) {
+		errLog( "malloc() failed on new_board->filename" );
+		return NULL;
+	}
+	strncpy( new_board->filename, TEST_FILE, sizeof( TEST_FILE ) );
+
 	new_board->cells = malloc( (new_board->w * new_board->h) * sizeof(Cell) );
 	if( !new_board->cells ) {
 		// errLog malloc() failed on cells
@@ -101,6 +117,7 @@ Board * boardInit( int w, int h, bool color ) {
 void boardFree( Board * board ) {
 	if( board ) {
 		free( board->cells );
+		free( board->filename );
 		free( board );
 	}
 }
@@ -165,6 +182,101 @@ void floodFill( Board * board, Cell first, Cell second, int x, int y ) {
 			floodFill( board, first, second, x, y + 1 );
 		}
 	}
+}
+
+bool boardSaveToFile( Board * brd ) {
+	FILE * f = fopen ( brd->filename, "w" );
+	if( !f ) {
+		return false;
+	}
+	fprintf( f, "%d\n%d\n%d\n", brd->w, brd->h, brd->color_enabled );
+
+	int x, y;
+	for( x = 0; x < brd->w; x++ ) {
+		for( y = 0; y < brd->h; y++ ) {
+
+			Cell work = boardGetCell( brd, x, y );
+
+			fprintf( f, "%d\n", work.pattern );
+			fprintf( f, "%d\n", work.fg );
+			fprintf( f, "%d\n", work.bg );
+			fprintf( f, "%d\n", work.bright );
+			fprintf( f, "%d\n", work.blink );
+		}
+	}
+	fclose( f );
+	return true;
+}
+
+bool boardLoadFromFile( Board * brd ) {
+	// TODO board needs to be reallocated if the dimensions are not the same
+	FILE * f = fopen( brd->filename, "r" );
+	if( !f ) {
+		return false;
+	}
+	#define BUF_LEN 32
+	int w = 0, h = 0, color_enabled = false;
+
+	Cell work;
+	work.pattern = ' ';
+	work.fg = COLOR_WHITE;
+	work.bg = COLOR_BLACK;
+	work.bright = true;
+	work.blink = false;
+
+	char buf[BUF_LEN];
+	if( fgets( buf, BUF_LEN, f ) != NULL ) {
+		w = atoi( buf );
+	}
+	if( fgets( buf, BUF_LEN, f ) != NULL ) {
+		h = atoi( buf );
+	}
+	if( fgets( buf, BUF_LEN, f ) != NULL ) {
+		color_enabled = atoi( buf );
+	}
+
+	if( w < 1 || h < 1 ) {
+		errLog( "boardLoadFromFile(): invalid dimensions w%d h%d", w, h ); 
+		return false;
+	}
+	brd->w = w;
+	brd->h = h;
+	brd->color_enabled = color_enabled;
+
+	int x, y;
+	for( x = 0; x < w; x++ ) {
+		for( y = 0; y < h; y++ ) {
+			work.pattern = ' ';
+			work.fg = COLOR_WHITE;
+			work.bg = COLOR_BLACK;
+			work.bright = true;
+			work.blink = false;
+
+			if( fgets( buf, BUF_LEN, f ) != NULL ) {
+				 work.pattern = atoi( buf );
+				 errLog( buf );
+			}
+			if( fgets( buf, BUF_LEN, f ) != NULL ) {
+				 work.fg = atoi( buf );
+				 errLog( buf );
+			}
+			if( fgets( buf, BUF_LEN, f ) != NULL ) {
+				 work.bg = atoi( buf );
+				 errLog( buf );
+			}
+			if( fgets( buf, BUF_LEN, f ) != NULL ) {
+				 work.bright = atoi( buf );
+				 errLog( buf );
+			}
+			if( fgets( buf, BUF_LEN, f ) != NULL ) {
+				 work.blink = atoi( buf );
+				 errLog( buf );
+			}
+
+			boardPutCell( brd, work, x, y );
+		}
+	}
+	return true;
 }
 
 int main( int argc, char * argv[] ) {
@@ -331,6 +443,12 @@ int main( int argc, char * argv[] ) {
 					cursor.y++;
 				}
 			}
+		}
+		if( input == 'S' ) {
+			boardSaveToFile( my_board );
+		}
+		if( input == 'L' ) {
+			boardLoadFromFile( my_board );
 		}
 		
 		if( doodle_mode ) {
