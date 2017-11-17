@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <ctype.h>
 #include <math.h>
 
 #include "curses.h"
@@ -184,9 +185,10 @@ void floodFill( Board * board, Cell first, Cell second, int x, int y ) {
 	}
 }
 
-bool boardSaveToFile( Board * brd ) {
-	FILE * f = fopen ( brd->filename, "w" );
+bool boardSaveToFile( Board * brd, char * filename ) {
+	FILE * f = fopen ( filename, "w" );
 	if( !f ) {
+		errLog( "boardSaveToFile(): Could not open %s for writing", filename );
 		return false;
 	}
 	fprintf( f, "%d\n%d\n%d\n", brd->w, brd->h, brd->color_enabled );
@@ -208,10 +210,11 @@ bool boardSaveToFile( Board * brd ) {
 	return true;
 }
 
-bool boardLoadFromFile( Board * brd ) {
+bool boardLoadFromFile( Board * brd, char * filename ) {
 	// TODO board needs to be reallocated if the dimensions are not the same
-	FILE * f = fopen( brd->filename, "r" );
+	FILE * f = fopen( filename, "r" );
 	if( !f ) {
+		errLog( "boardLoadFromFile(): Could not load %s", filename );
 		return false;
 	}
 	#define BUF_LEN 32
@@ -320,144 +323,180 @@ int main( int argc, char * argv[] ) {
 
 	Coord offset = {1, 1} ;
 
+	bool enter_input = false;
+	#define USER_INPUT_SZ 64
+	char user_input[USER_INPUT_SZ] = {0};
+	strcpy( user_input, "scratch.brd" );
+	int user_input_spot = 0;
+	bool skip_input_one_tick = false;
+
 	while( keep_go ) {
-		if( !first_tick ) {
+		if( !first_tick && !skip_input_one_tick ) {
 			input = getch();
 		}
-		
-		if( input == 'q') {	// quit
-			keep_go = false;
-		}
-		
-		if( input == 'r') { // reset board
-			boardWipe( my_board, ' ', COLOR_WHITE, COLOR_BLACK, true, false );
-		}
-		
-		if( input == '\t' ) {	// Toggle doodle mode
-			doodle_mode = !doodle_mode;
-		}
-		
-		if( input == 'f' ) {	// Floodfill
-			Cell target = boardGetCell( my_board, cursor.x, cursor.y );
-			floodFill( my_board, target, primary, cursor.x, cursor.y );
-		}
-		
-		if( input == '\n' ) {
-			primary = boardGetCell( my_board, cursor.x, cursor.y );
-			mvprintw(24, 24, "Enter!");
+		if( skip_input_one_tick ) {
+			input = ERR;
+			skip_input_one_tick = false;
 		}
 
-		if( input == 'c' ) {	// Cycle foreground color
-			primary.fg++;
-			if( primary.fg > N_COLORS - 1 ) {
-				primary.fg = 0;
-			}
-		}
-		if( input == 'v' ) {	// Cycle background color
-			primary.bg++;
-			if( primary.bg > N_COLORS - 1 ) {
-				primary.bg = 0;
-			}
-		}
-		if( input == 'D' ) {
-			primary.bright = !primary.bright;
-		}
-		if( input == 'F' ) {
-			primary.blink = !primary.blink;
-		}
-
-		if( input == '-' ) {
-			if( cstep_x > 1 ) {
-				cstep_x--;
-			}
-		}
-		if( input == '=' ) {
-			if( cstep_x < my_board->w - 1 ) {
-				cstep_x++;
-			}
-		}
-
-		if( input == '_' ) {
-			if( cstep_y > 1 ) {
-				cstep_y--;
-			}
-		}
-		if( input == '+' ) {
-			if( cstep_y < my_board->h - 1 ) {
-				cstep_y++;
-			}
-		}
-
-		if( input == ' ' ) {
-			boardPutCell( my_board, primary, cursor.x, cursor.y );
-			//boardPut( my_board, c_pattern, cursor.x, cursor.y );
-		}
-		if( input == KEY_DC ) {
-			Cell empty;
-			empty.pattern = ' ';
-			empty.fg = COLOR_WHITE;
-			empty.bg = COLOR_BLACK;
-			empty.bright = true;
-			empty.blink = false;
-			//boardPut( my_board, ' ', cursor.x, cursor.y );
-			boardPutCell( my_board, empty, cursor.x, cursor.y );
-		}
-
-		if( input == '[' ) {
-			primary.pattern--;
-			if( primary.pattern < 32 ) {
-				primary.pattern = 126;
-			}
-		}
-		if( input == ']' ) {
-			primary.pattern++;
-			if( primary.pattern > 126 ) {
-				primary.pattern = 32;
-			}
-		}
-
-		if( input == KEY_LEFT ) {
-			for( cstep_count = 0; cstep_count < cstep_x; cstep_count++ ) {
-				if( cursor.x > 0 )  {
-					cursor.x--;
+		if( enter_input ) {
+			if( isascii( input ) && input != '\n' && input != '\r' && input != '\t' ) {
+				if( user_input_spot < USER_INPUT_SZ - 1) {
+					user_input[user_input_spot] = input;
+					user_input[user_input_spot + 1] = '\0';
+					user_input_spot++;
 				}
 			}
-		}
-		if( input == KEY_RIGHT ) {
-			for( cstep_count = 0; cstep_count < cstep_x; cstep_count++ ) {
-				if( cursor.x < my_board->w - 1 ) {
-					cursor.x++;
+			if( input == KEY_BACKSPACE ) {
+				if( user_input_spot > 0 ) {
+					user_input_spot--;
 				}
+				user_input[user_input_spot] = '\0';
+			}
+			if( input == '\n' ) {
+				enter_input = false;
+				skip_input_one_tick = true;
+				continue;
 			}
 		}
-		if( input == KEY_UP ) {
-			for( cstep_count = 0; cstep_count < cstep_y; cstep_count++ ) {
-				if( cursor.y > 0 )  {
-					cursor.y--;
-				}
+		else {
+			if( input == '@' ) {
+				enter_input = true;
+				skip_input_one_tick = true;
 			}
-		}
-		if( input == KEY_DOWN ) {
-			for( cstep_count = 0; cstep_count < cstep_y; cstep_count++ ) {
-				if( cursor.y < my_board->h - 1) {
-					cursor.y++;
-				}
+			if( input == 'q') {	// quit
+				keep_go = false;
 			}
-		}
-		if( input == 'S' ) {
-			boardSaveToFile( my_board );
-		}
-		if( input == 'L' ) {
-			boardLoadFromFile( my_board );
-		}
 		
-		if( doodle_mode ) {
-			boardPutCell( my_board, primary, cursor.x, cursor.y );
-		}
+			if( input == 'r') { // reset board
+				boardWipe( my_board, ' ', COLOR_WHITE, COLOR_BLACK, true, false );
+			}
+			
+			if( input == '\t' ) {	// Toggle doodle mode
+				doodle_mode = !doodle_mode;
+			}
+			
+			if( input == 'f' ) {	// Floodfill
+				Cell target = boardGetCell( my_board, cursor.x, cursor.y );
+				floodFill( my_board, target, primary, cursor.x, cursor.y );
+			}
+			
+			if( input == '\n' ) {
+				primary = boardGetCell( my_board, cursor.x, cursor.y );
+				mvprintw(24, 24, "Enter!");
+			}
+	
+			if( input == 'c' ) {	// Cycle foreground color
+				primary.fg++;
+				if( primary.fg > N_COLORS - 1 ) {
+					primary.fg = 0;
+				}
+			}
+			if( input == 'v' ) {	// Cycle background color
+				primary.bg++;
+				if( primary.bg > N_COLORS - 1 ) {
+					primary.bg = 0;
+				}
+			}
+			if( input == 'D' ) {
+				primary.bright = !primary.bright;
+			}
+			if( input == 'F' ) {
+				primary.blink = !primary.blink;
+			}
 
+			if( input == '-' ) {
+				if( cstep_x > 1 ) {
+					cstep_x--;
+				}
+			}
+			if( input == '=' ) {
+				if( cstep_x < my_board->w - 1 ) {
+					cstep_x++;
+				}
+			}
+
+			if( input == '_' ) {
+				if( cstep_y > 1 ) {
+					cstep_y--;
+				}
+			}
+			if( input == '+' ) {
+				if( cstep_y < my_board->h - 1 ) {
+					cstep_y++;
+				}
+			}
+
+			if( input == ' ' ) {
+				boardPutCell( my_board, primary, cursor.x, cursor.y );
+				//boardPut( my_board, c_pattern, cursor.x, cursor.y );
+			}
+			if( input == KEY_DC ) {
+				Cell empty;
+				empty.pattern = ' ';
+				empty.fg = COLOR_WHITE;
+				empty.bg = COLOR_BLACK;
+				empty.bright = true;
+				empty.blink = false;
+				//boardPut( my_board, ' ', cursor.x, cursor.y );
+				boardPutCell( my_board, empty, cursor.x, cursor.y );
+			}
+
+			if( input == '[' ) {
+				primary.pattern--;
+				if( primary.pattern < 32 ) {
+					primary.pattern = 126;
+				}
+			}
+			if( input == ']' ) {
+				primary.pattern++;
+				if( primary.pattern > 126 ) {
+					primary.pattern = 32;
+				}
+			}
+
+			if( input == KEY_LEFT ) {
+				for( cstep_count = 0; cstep_count < cstep_x; cstep_count++ ) {
+					if( cursor.x > 0 )  {
+						cursor.x--;
+					}
+				}
+			}
+			if( input == KEY_RIGHT ) {
+				for( cstep_count = 0; cstep_count < cstep_x; cstep_count++ ) {
+					if( cursor.x < my_board->w - 1 ) {
+						cursor.x++;
+					}
+				}
+			}
+			if( input == KEY_UP ) {
+				for( cstep_count = 0; cstep_count < cstep_y; cstep_count++ ) {
+					if( cursor.y > 0 )  {
+						cursor.y--;
+					}
+				}
+			}
+			if( input == KEY_DOWN ) {
+				for( cstep_count = 0; cstep_count < cstep_y; cstep_count++ ) {
+					if( cursor.y < my_board->h - 1) {
+						cursor.y++;
+					}
+				}
+			}
+			if( input == 'S' ) {
+				boardSaveToFile( my_board, user_input );
+			}
+			if( input == 'L' ) {
+				boardLoadFromFile( my_board, user_input );
+			}
+			
+			if( doodle_mode ) {
+				boardPutCell( my_board, primary, cursor.x, cursor.y );
+			}
+		}
 		clear();
 		boardDraw( my_board, offset, true );
-
+	
 		if( !doodle_mode ) {
 			curs_set( 1 ); // Hmm, this doesn't seem to show a different cursor under my current gnome-terminal.
 			mvprintw( 22, 0, "                   " );
@@ -469,8 +508,17 @@ int main( int argc, char * argv[] ) {
 		mvprintw( 23, 0, "X %d Y %d W %d H %d XStep %d YStep %d fg %d bg %d bright %d blink %d\npattern %d / %c", 
 		cursor.x, cursor.y, my_board->w, my_board->h, cstep_x, cstep_y, primary.fg, primary.bg, primary.bright, primary.blink, primary.pattern, primary.pattern );
 
+		if( enter_input ) {
+			mvprintw( 25, 0, user_input );
+		}
+		
 		curs_set( 1 );
-		move( cursor.y + offset.y, cursor.x + offset.x );
+		if( enter_input ) {
+			move( 25, 0 + user_input_spot );
+		}
+		else {
+			move( cursor.y + offset.y, cursor.x + offset.x );
+		}
 		refresh();
 		first_tick = false;
 	}
