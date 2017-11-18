@@ -18,7 +18,6 @@ Grab character and color: Enter
 
 Erase character: Delete
 
-
 Cycle foreground color: c
 
 Cycle background color: v
@@ -31,16 +30,23 @@ Next character: \]
 
 Prev character: \[
 
-
 Toggle Sustained Draw (Doodle Mode): Tab
 
+Toggle normal text input (Typewriter Mode): t to activate, Enter to leave
 
 Set filename (default scratch.brd): @ (Shift + 2)
+
+Set upper-left copy zone: z
+
+Set lower-right copy zone: x
+
+Copy zone to clipboard: Z
+
+Paste zone from clipboard: X
 
 Load specified file: L
 
 Save specified file: S
-
 
 ##### Building
 
